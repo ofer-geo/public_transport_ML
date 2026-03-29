@@ -32,7 +32,7 @@ def fetch_all_rides(start_date, end_date, city_name="תל אביב", limit=100):
     params = {
         "limit": limit,
         "scheduled_start_time_from": f"{start_date}T00:00:00Z",
-        "scheduled_start_time_to": f"{end_date}T02:59:29Z",
+        "scheduled_start_time_to": f"{end_date}T23:59:59Z",
         "gtfs_route__route_long_name_contains": city_name,
     }
 
