@@ -1,3 +1,8 @@
+from datetime import timezone, timedelta
+from pathlib import Path
+
+BASE = "https://open-bus-stride-api.hasadna.org.il"
+
 COLS_HEB_TO_ENG = {
     'תאריך':'date',
     'יום':'day',
@@ -54,4 +59,9 @@ RAIN_COLS_HEB_TO_ENG = {
     "תאריך ושעה (שעון קיץ)": "datetime",
     'כמות גשם (מ"מ)':  "rainfall_mm"
 }
+
+TZ = timezone(timedelta(hours=3))
+
+WEEK_LABEL = "apr2024"
+OUT_FILE   = Path(f"telaviv_buses_{WEEK_LABEL}.csv")
 
