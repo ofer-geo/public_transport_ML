@@ -94,52 +94,203 @@ def build_rows(rides, route_cache):
 
     return df
 
-def fix_datetime_columns(df):
+def fix_data_types(df):
     """
-    Fix departure and arrival time columns by combining date with time.
+    Fix all column types, rename columns and set categorical orders.
     
     Args:
-        df: DataFrame with columns: date, departure_time_planned, arrival_time_planned
+        df: DataFrame
     
     Returns:
-        df: DataFrame with fixed datetime columns
+        df: DataFrame with fixed column types
     """
+    # Date
     df['date'] = pd.to_datetime(df['date'])
     
+    # Departure and arrival times
     df['departure_time_planned'] = pd.to_datetime(
         df['date'].dt.strftime('%Y-%m-%d') + ' ' + 
         pd.to_datetime(df['departure_time_planned'], format='mixed').dt.strftime('%H:%M:%S'),
         format='%Y-%m-%d %H:%M:%S'
     )
-    
     df['arrival_time_planned'] = pd.to_datetime(
         df['date'].dt.strftime('%Y-%m-%d') + ' ' + 
         pd.to_datetime(df['arrival_time_planned'], format='mixed').dt.strftime('%H:%M:%S'),
         format='%Y-%m-%d %H:%M:%S'
     )
     
-    return df    
-
-def fix_column_types(df):
-    """
-    Fix column types and rename columns.
-    """
+    # Rename hour_rounded to full_hour
     df = df.rename(columns={'hour_rounded': 'full_hour'})
+    
+    # line_num to int
     df['line_num'] = pd.to_numeric(df['line_num'], errors='coerce').astype('Int64')
-    return df
-
-
-def fix_categorical_columns(df):
-    """
-    Fix categorical and string columns.
-    """
+    
+    # day - categorical with order
     day_order = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
     df['day'] = pd.Categorical(df['day'], categories=day_order, ordered=True)
     
+    # string columns
     str_cols = ['line_name', 'alternative', 'agency_name', 'origin_city', 
                 'origin_station', 'destination_city', 'destination_station', 'route_type']
     df[str_cols] = df[str_cols].astype(str)
     df['route_type'] = df['route_type'].str.strip()
     
     return df
+
+
+def handle_missing_values(df, cols=['Total_Passengers']):
+    """
+    Handle missing values using progressive groupby strategy and mean imputation.
+    
+    Args:
+        df: DataFrame
+        cols: list of columns to fill with groupby median strategy
+    
+    Returns:
+        df: DataFrame with filled missing values
+    """
+    # שלב 1-4 - groupby progressive strategy
+    for col in cols:
+        df[col] = df.groupby(['route_id', 'direction', 'day', 'full_hour'])[col].transform(
+            lambda x: x.fillna(x.median())
+        )
+        print(f"{col} missing after step 1: {df[col].isna().sum()}")
+        
+        df[col] = df.groupby(['route_id', 'direction', 'day'])[col].transform(
+            lambda x: x.fillna(x.median())
+        )
+        print(f"{col} missing after step 2: {df[col].isna().sum()}")
+        
+        df[col] = df.groupby(['route_id'])[col].transform(
+            lambda x: x.fillna(x.median())
+        )
+        print(f"{col} missing after step 3: {df[col].isna().sum()}")
+        
+        df[col] = df[col].fillna(df[col].median())
+        print(f"{col} missing after step 4: {df[col].isna().sum()}")
+    
+    # Impute duration and speed by agency, line and hour
+    for col in ['duration_min_actual', 'duration_difference_min', 'speed_kmh_actual']:
+        df = impute_by_agency_line_hour(df, col)
+    
+    # Impute geometric columns with mean
+    geo_cols = ['curvity', 'perc_within_pt_route', 'route_length', 'length_in_buffer_m']
+    for col in geo_cols:
+        df[col] = df[col].fillna(df[col].mean())
+    
+    # Missing summary
+    missing_summary = pd.DataFrame({
+        'missing_count': df.isnull().sum(),
+        'missing_percent': df.isnull().mean() * 100
+    }).sort_values(by='missing_percent', ascending=False)
+    
+    print("\nMissing Summary:")
+    print(missing_summary[missing_summary['missing_count'] > 0])
+    
+    return df
+
+
+def fix_speed_and_duration(df):
+    """
+    Fix speed and duration columns:
+    - Fix speed_kmh_planned > 100
+    - Fix trips ending after midnight
+    - Remove outliers in duration_difference_min
+    
+    Args:
+        df: DataFrame
+    
+    Returns:
+        df: DataFrame with fixed speed and duration columns
+    """
+    # Fix speed > 100
+    mask_high = df['speed_kmh_planned'] > 100
+    print(f"Rows with speed > 100: {mask_high.sum()}")
+    df.loc[mask_high, 'speed_kmh_planned'] = df.loc[mask_high, 'speed_kmh_planned'] / 1000
+    
+    # Convert to datetime
+    df['departure_time_planned'] = pd.to_datetime(df['departure_time_planned'].astype(str), format='mixed')
+    df['arrival_time_planned'] = pd.to_datetime(df['arrival_time_planned'].astype(str), format='mixed')
+    
+    # Fix trips ending after midnight
+    mask_midnight = df['arrival_time_planned'] < df['departure_time_planned']
+    print(f"Trips ending after midnight: {mask_midnight.sum()}")
+    
+    df.loc[mask_midnight, 'duration_min_planned'] = (
+        (df.loc[mask_midnight, 'arrival_time_planned'] + pd.Timedelta(days=1)) - 
+        df.loc[mask_midnight, 'departure_time_planned']
+    ).dt.total_seconds() / 60
+    
+    df.loc[mask_midnight, 'speed_kmh_planned'] = (
+        (df.loc[mask_midnight, 'route_length'] / 1000) / 
+        (df.loc[mask_midnight, 'duration_min_planned'] / 60)
+    )
+    
+    # Remove outliers in duration_difference_min
+    before = len(df)
+    df = df[(df['duration_difference_min'] >= -120) & 
+            (df['duration_difference_min'] <= 120)]
+    after = len(df)
+    print(f"Rows removed: {before - after:,} ({(before-after)/before*100:.2f}%)")
+    print(f"Rows remaining: {after:,}")
+    
+    return df
+
+def drop_unnecessary_columns(df):
+    """
+    Drop unnecessary columns from DataFrame.
+    
+    Args:
+        df: DataFrame
+    
+    Returns:
+        df: DataFrame without unnecessary columns
+    """
+    cols_to_drop = [
+        'route_dir_alt_day_hr',
+        'line_num_agency_alter_dir',
+        'SIRI_id',
+        'gtfs_ride_id',
+        'gtfs_route_id'
+    ]
+    
+    df = df.drop(columns=cols_to_drop, errors='ignore')
+    print(f"Remaining columns: {df.shape[1]}")
+    
+    return df
+
+
+def encode_categorical_columns(df):
+    """
+    Encode categorical columns using Ordinal, One-Hot and Target encoding.
+    
+    Args:
+        df: DataFrame
+    
+    Returns:
+        df: DataFrame with encoded categorical columns
+    """
+    # Ordinal encoding - day
+    day_order = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    day_mapping = {day: i for i, day in enumerate(day_order)}
+    df['day_encoded'] = df['day'].map(day_mapping)
+    
+    # One-Hot encoding - alternative
+    alternative_dummies = pd.get_dummies(df['alternative'], prefix='alternative')
+    df = pd.concat([df, alternative_dummies], axis=1)
+    
+    # Target encoding
+    from category_encoders import TargetEncoder
+    target_cols = ['agency_name', 'origin_city', 'destination_city', 
+                   'origin_station', 'destination_station']
+    te = TargetEncoder()
+    df[[f'{col}_encoded' for col in target_cols]] = te.fit_transform(
+        df[target_cols], 
+        df['duration_difference_min']
+    )
+    
+    print(f"New columns added: day_encoded, {list(alternative_dummies.columns)}")
+    print(f"Target encoded: {[f'{col}_encoded' for col in target_cols]}")
+    
+    return df    
     
