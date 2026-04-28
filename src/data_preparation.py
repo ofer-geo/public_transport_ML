@@ -93,3 +93,29 @@ def build_rows(rides, route_cache):
     df = pd.DataFrame(rows)
 
     return df
+
+def fix_datetime_columns(df):
+    """
+    Fix departure and arrival time columns by combining date with time.
+    
+    Args:
+        df: DataFrame with columns: date, departure_time_planned, arrival_time_planned
+    
+    Returns:
+        df: DataFrame with fixed datetime columns
+    """
+    df['date'] = pd.to_datetime(df['date'])
+    
+    df['departure_time_planned'] = pd.to_datetime(
+        df['date'].dt.strftime('%Y-%m-%d') + ' ' + 
+        pd.to_datetime(df['departure_time_planned'], format='mixed').dt.strftime('%H:%M:%S'),
+        format='%Y-%m-%d %H:%M:%S'
+    )
+    
+    df['arrival_time_planned'] = pd.to_datetime(
+        df['date'].dt.strftime('%Y-%m-%d') + ' ' + 
+        pd.to_datetime(df['arrival_time_planned'], format='mixed').dt.strftime('%H:%M:%S'),
+        format='%Y-%m-%d %H:%M:%S'
+    )
+    
+    return df    
