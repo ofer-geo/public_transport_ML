@@ -1,4 +1,7 @@
 import pandas as pd
+import geopandas as gpd
+from shapely import wkt
+from shapely.geometry import Point
 
 def rename_columns(df,cols_names_dict):
     return df.rename(columns=cols_names_dict)
@@ -293,4 +296,72 @@ def encode_categorical_columns(df):
     print(f"Target encoded: {[f'{col}_encoded' for col in target_cols]}")
     
     return df    
+
+
+
+from shapely.geometry import Point
+
+def add_circular_route_flag(
+    df,
+    routes_linestring_path,
+    route_id_col="route_id",
+    linestring_col="linestring",
+    threshold=500,
+    crs="EPSG:2039"
+):
+    
+    def is_circular(geom):
+        if geom is None or geom.is_empty:
+            return 0
+        
+        if geom.geom_type == "MultiLineString":
+            if len(geom.geoms) == 0:
+                return 0
+            geom = geom.geoms[0]
+        
+        if len(geom.coords) < 2:
+            return 0
+        
+        start = Point(geom.coords[0])
+        end = Point(geom.coords[-1])
+        
+        dist = start.distance(end)
+        
+        return 1 if dist < threshold else 0
+
+    # read route geometries
+    df_linestring = pd.read_csv(routes_linestring_path)
+
+    # convert WKT string to geometry
+    df_linestring[linestring_col] = df_linestring[linestring_col].apply(
+        lambda x: wkt.loads(x) if isinstance(x, str) and x.strip() != "" else None
+    )
+
+    # convert to GeoDataFrame
+    gdf_linestring = gpd.GeoDataFrame(
+        df_linestring,
+        geometry=linestring_col,
+        crs=crs
+    )
+
+    # calculate circular flag per route
+    gdf_linestring["circular_route_flag"] = gdf_linestring[linestring_col].apply(is_circular)
+
+    # avoid duplicated route_id values before merge
+    route_flags = (
+        gdf_linestring[[route_id_col, "circular_route_flag"]]
+        .drop_duplicates(subset=route_id_col)
+    )
+
+    # merge back to original df
+    df = df.merge(
+        route_flags,
+        on=route_id_col,
+        how="left"
+    )
+
+    # routes missing from linestring file get 0
+    df["circular_route_flag"] = df["circular_route_flag"].fillna(0).astype(int)
+
+    return df
     
