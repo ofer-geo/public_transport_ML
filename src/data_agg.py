@@ -201,33 +201,6 @@ def calc_curvity(line):
 
 
 
-
-def add_circular_flag(gdf, threshold=500, geom_col="linestring"):
-    
-    def is_circular(geom):
-        if geom is None or geom.is_empty:
-            return None
-        
-        if geom.geom_type == "MultiLineString":
-            if len(geom.geoms) == 0:
-                return None
-            geom = geom.geoms[0]
-        
-        if len(geom.coords) < 2:
-            return None
-        
-        start = Point(geom.coords[0])
-        end = Point(geom.coords[-1])
-        
-        dist = start.distance(end)
-        
-        return 1 if dist < threshold else 0
-    
-    gdf["circular_route"] = gdf[geom_col].apply(is_circular)
-    
-    return gdf
-
-
 def parse_mixed_date(value):
     """
     Parse mixed date formats into pandas Timestamp.
