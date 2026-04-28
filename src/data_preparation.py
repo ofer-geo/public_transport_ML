@@ -119,3 +119,47 @@ def fix_datetime_columns(df):
     )
     
     return df    
+
+def fix_column_types(df):
+    """
+    Fix column types and rename columns.
+    
+    Args:
+        df: DataFrame
+    
+    Returns:
+        df: DataFrame with fixed column types
+    """
+    # Rename hour_rounded to full_hour
+    df = df.rename(columns={'hour_rounded': 'full_hour'})
+    
+    # line_num to int
+    df['line_num'] = pd.to_numeric(df['line_num'], errors='coerce').astype('Int64')
+    
+    return df    
+
+
+def fix_categorical_columns(df):
+    """
+    Fix categorical and string columns.
+    
+    Args:
+        df: DataFrame
+    
+    Returns:
+        df: DataFrame with fixed categorical columns
+    """
+    # day - categorical with order
+    day_order = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    df['day'] = pd.Categorical(df['day'], categories=day_order, ordered=True)
+    
+    # string columns
+    str_cols = ['line_name', 'alternative', 'agency_name', 'origin_city', 
+                'origin_station', 'destination_city', 'destination_station', 'route_type']
+    df[str_cols] = df[str_cols].astype(str)
+    
+    # strip whitespace from route_type
+    df['route_type'] = df['route_type'].str.strip()
+    
+    return df
+    
