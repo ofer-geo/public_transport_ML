@@ -553,3 +553,77 @@ def compare_xgb_feature_sets(X_train, y_train, X_val, y_val, selection_df):
     results_df = pd.DataFrame(results).sort_values(by="RMSE")
 
     return results_df
+
+def fill_planned_missing_values(df, verbose=True):
+    import pandas as pd
+    
+    df = df.copy()
+
+    # Convert to datetime
+    df['departure_time_planned'] = pd.to_datetime(
+        df['departure_time_planned'].astype(str), format='%H:%M:%S', errors='coerce'
+    )
+    df['arrival_time_planned'] = pd.to_datetime(
+        df['arrival_time_planned'].astype(str), format='%H:%M:%S', errors='coerce'
+    )
+
+    selected_cols = [
+        'departure_time_planned',
+        'arrival_time_planned',
+        'duration_min_planned',
+        'duration_min_actual',
+        'speed_kmh_planned',
+        'speed_kmh_actual',
+        'duration_difference_min'
+    ]
+
+    # --- Fill duration_min_planned ---
+    mask1 = df['duration_min_planned'].isna()
+    df.loc[mask1, 'duration_min_planned'] = (
+        (df.loc[mask1, 'arrival_time_planned'] - df.loc[mask1, 'departure_time_planned'])
+        .dt.total_seconds() / 60
+    )
+    if verbose:
+        print(f"duration_min_planned filled: {mask1.sum()}")
+
+    # --- Fill duration_difference_min ---
+    mask2 = df['duration_difference_min'].isna()
+    df.loc[mask2, 'duration_difference_min'] = (
+        df.loc[mask2, 'duration_min_actual'] - df.loc[mask2, 'duration_min_planned']
+    )
+    if verbose:
+        print(f"duration_difference_min filled: {mask2.sum()}")
+
+    # --- Fill speed_kmh_planned ---
+    mask3 = df['speed_kmh_planned'].isna()
+    df.loc[mask3, 'speed_kmh_planned'] = (
+        (df.loc[mask3, 'route_length'] / 1000) /
+        (df.loc[mask3, 'duration_min_planned'] / 60)
+    )
+    if verbose:
+        print(f"speed_kmh_planned filled: {mask3.sum()}")
+
+    # --- Remove invalid values ---
+    if verbose:
+        print(f"duration_min_planned < 0: {(df['duration_min_planned'] < 0).sum():,}")
+        print(f"speed_kmh_planned < 0:    {(df['speed_kmh_planned'] < 0).sum():,}")
+
+    df = df[
+        (df['duration_min_planned'] >= 0) &
+        (df['speed_kmh_planned'] >= 0)
+    ]
+
+    if verbose:
+        print(f"\nRows after drop: {len(df):,}")
+
+    # --- Missing summary ---
+    missing_summary = pd.DataFrame({
+        'missing_count': df.isnull().sum(),
+        'missing_percent': df.isnull().mean() * 100
+    }).sort_values(by='missing_percent', ascending=False)
+
+    if verbose:
+        display(df[selected_cols].head())
+        display(missing_summary)
+
+    return df, missing_summary
