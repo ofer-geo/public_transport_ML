@@ -269,21 +269,7 @@ def encode_categorical_columns(df, te=None, alternative_cols=None):
     day_order = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
     day_mapping = {day: i for i, day in enumerate(day_order)}
     df['day_encoded'] = df['day'].map(day_mapping)
-
-
-     # Ordinal encoding - route_length_bin
-    # -----------------------------
-    route_length_order = ['0-30k', '30-100k', '100k+']
-    
-    route_length_mapping = {
-        val: i for i, val in enumerate(route_length_order)
-    }
-    
-    df['route_length_bin_encoded'] = df['route_length_bin'].map(
-        route_length_mapping
-    )
-    
-    
+ 
     # Target encoding
     from category_encoders import TargetEncoder
     target_cols = ['agency_name', 'origin_city', 'destination_city', 
@@ -487,8 +473,6 @@ def manipulate_df_process(df):
     df = handle_missing_values(df, ref_df=None)
     df = handle_outliers(df)
     df = add_features(df)
-    prob_table = build_probability_table(df, smoothing_alpha=0)
-    df = apply_early_probability(df, prob_table)
     df, te, alternative_cols = encode_categorical_columns(df, te=None, alternative_cols=None)
 
     return df
@@ -714,6 +698,17 @@ def apply_early_probability(
     # Handle missing values (important!)
     global_mean = early_prob['early'].mean()
     df['early_by_hour_length_proba'] = df['early_by_hour_length_proba'].fillna(global_mean)
+  
+    # Ordinal encoding - route_length_bin
+    # -----------------------------
+    
+    route_length_mapping = {
+        val: i for i, val in enumerate(labels)
+    }
+    
+    df['route_length_bin_encoded'] = df['route_length_bin'].map(
+        route_length_mapping
+    )
 
     return df
 
