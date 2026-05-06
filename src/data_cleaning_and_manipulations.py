@@ -255,6 +255,9 @@ def add_features(df):
         df_copy['alternative'].astype(str)
     )
 
+    df_copy['is_night'] = df_copy['full_hour'].isin([0,1,2,3,4,5]).astype(int)
+    df_copy['night_x_long_route'] = df_copy['is_night'] * (df['route_length']/1000)
+
     return df_copy
 
 
