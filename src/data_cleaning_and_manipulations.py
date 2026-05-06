@@ -269,6 +269,19 @@ def encode_categorical_columns(df, te=None, alternative_cols=None):
     day_order = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
     day_mapping = {day: i for i, day in enumerate(day_order)}
     df['day_encoded'] = df['day'].map(day_mapping)
+
+
+     # Ordinal encoding - route_length_bin
+    # -----------------------------
+    route_length_order = ['0-30k', '30-100k', '100k+']
+    
+    route_length_mapping = {
+        val: i for i, val in enumerate(route_length_order)
+    }
+    
+    df['route_length_bin_encoded'] = df['route_length_bin'].map(
+        route_length_mapping
+    )
     
     
     # Target encoding
@@ -341,7 +354,7 @@ def drop_unnecessary_columns(df):
     cols_to_drop = [
         # כבר מקודדות
         'day', 'alternative', 'agency_name', 'origin_city',
-        'origin_station', 'destination_city', 'destination_station',
+        'origin_station', 'destination_city', 'destination_station','route_length_bin',
         # זהות לעמודות אחרות
         'route_mkt', 'route_length_kn',
         # טקסט/זמן
@@ -474,9 +487,12 @@ def manipulate_df_process(df):
     df = handle_missing_values(df, ref_df=None)
     df = handle_outliers(df)
     df = add_features(df)
+    prob_table = build_probability_table(df, smoothing_alpha=0)
+    df = apply_early_probability(df, prob_table)
     df, te, alternative_cols = encode_categorical_columns(df, te=None, alternative_cols=None)
-    
+
     return df
+    
 
 
 def compare_xgb_feature_sets(X_train, y_train, X_val, y_val, selection_df):
@@ -627,3 +643,123 @@ def fill_planned_missing_values(df, verbose=True):
         display(missing_summary)
 
     return df, missing_summary
+
+
+
+def build_probability_table(
+    df,
+    bins=[0, 30000, 100000,float('inf')],
+    labels=['0-30k', '30-100k','100k+'],
+    smoothing_alpha=0
+):
+    import numpy as np
+    
+    df = df.copy()
+
+    # Create bins
+    df['route_length_bin'] = pd.cut(
+        df['route_length'],
+        bins=bins,
+        labels=labels,
+        right=False
+    )
+
+    # Count occurrences
+    counts = (
+        df.groupby(['full_hour', 'route_length_bin', 'delay_cat'], observed=True)
+          .size()
+          .unstack(fill_value=0)
+    )
+
+    # --- Smoothing (optional but recommended) ---
+    if smoothing_alpha > 0:
+        global_dist = df['delay_cat'].value_counts(normalize=True)
+        counts = counts + smoothing_alpha * global_dist
+
+    # Convert to probabilities
+    prob_table = counts.div(counts.sum(axis=1), axis=0)
+
+    return prob_table
+
+
+def apply_early_probability(
+    df,
+    prob_table,
+    bins=[0, 30000, 100000, float('inf')],
+    labels=['0-30k', '30-100k','100k+']
+):
+    df = df.copy()
+
+    # Create same bins (IMPORTANT: must match training)
+    df['route_length_bin'] = pd.cut(
+        df['route_length'],
+        bins=bins,
+        labels=labels,
+        right=False
+    )
+
+    # Extract only early probability
+    early_prob = prob_table['early'].reset_index()
+
+    # Merge
+    df = df.merge(
+        early_prob,
+        on=['full_hour', 'route_length_bin'],
+        how='left'
+    )
+
+    # Rename column
+    df = df.rename(columns={'early': 'early_by_hour_length_proba'})
+
+    # Handle missing values (important!)
+    global_mean = early_prob['early'].mean()
+    df['early_by_hour_length_proba'] = df['early_by_hour_length_proba'].fillna(global_mean)
+
+    return df
+
+
+def create_target_column(
+    df,
+    source_col="duration_difference_min",
+    target_col="target",
+    early_threshold=-10,
+    delay_threshold=10,
+    print_distribution=True
+):
+    """
+    Create a categorical target column based on numeric thresholds.
+
+    Parameters:
+    df : DataFrame
+    source_col : str
+        Column with numeric values (e.g., duration difference)
+    target_col : str
+        Name of the new target column
+    early_threshold : float
+        Values below this are 'early'
+    delay_threshold : float
+        Values above this are 'delay'
+    print_distribution : bool
+        Whether to print value counts
+
+    Returns:
+    df : DataFrame (with new column)
+    """
+
+    import numpy as np
+
+    conditions = [
+        df[source_col] < early_threshold,
+        df[source_col] >= delay_threshold
+    ]
+
+    choices = ["early", "delay"]
+
+    df[target_col] = np.select(conditions, choices, default="on_time")
+
+    if print_distribution:
+        print(f"\nDistribution of '{target_col}':")
+        print(df[target_col].value_counts())
+        print(df[target_col].value_counts(normalize=True))
+
+    return df
