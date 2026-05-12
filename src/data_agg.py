@@ -291,3 +291,56 @@ def filter_by_multiple_date_windows(df, start_cols, end_cols, start_cutoffs, end
     return df[mask]
 
 
+
+from shapely.geometry import Point
+
+def add_circular_route_flag(
+    df,
+    route_id_col="route_id",
+    linestring_col="linestring",
+    threshold=500,
+    crs="EPSG:2039"
+):
+    
+    def is_circular(geom):
+        if geom is None or geom.is_empty:
+            return 0
+        
+        if geom.geom_type == "MultiLineString":
+            if len(geom.geoms) == 0:
+                return 0
+            geom = geom.geoms[0]
+        
+        if len(geom.coords) < 2:
+            return 0
+        
+        start = Point(geom.coords[0])
+        end = Point(geom.coords[-1])
+        
+        dist = start.distance(end)
+        
+        return 1 if dist < threshold else 0
+
+    routes_linestring_gdf = df[['route_id','linestring']].drop_duplicates(subset=['route_id','linestring'])
+    # calculate circular flag per route
+    routes_linestring_gdf["circular_route_flag"] = routes_linestring_gdf[linestring_col].apply(is_circular)
+
+    # avoid duplicated route_id values before merge
+    route_flags = (
+        routes_linestring_gdf[[route_id_col, "circular_route_flag"]]
+        .drop_duplicates(subset=route_id_col)
+    )
+
+    # merge back to original df
+    df = df.merge(
+        route_flags,
+        on=route_id_col,
+        how="left"
+    )
+
+    # routes missing from linestring file get 0
+    df["circular_route_flag"] = df["circular_route_flag"].fillna(0).astype(int)
+
+    return df
+
+
