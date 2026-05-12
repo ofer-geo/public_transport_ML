@@ -2,7 +2,7 @@
 
 Machine Learning project for analyzing and predicting public transportation operational performance using real-world bus trip data.
 
-This project was developed as part of the **Bar-Ilan University Data Science course**, with the objective of learning and applying end-to-end machine learning workflows on a real-world transportation dataset.
+This project was developed as part of the **Bar-Ilan University Data Science course**, with the objective of learning and applying end-to-end machine learning workflows.
 
 The project combines operational, spatial, passenger, and weather datasets in order to classify bus rides into:
 
