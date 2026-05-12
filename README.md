@@ -30,7 +30,7 @@ The analysis focuses on trip-level operational behavior rather than segment-leve
 
 ## Workflow
 
-![Workflow Diagram](figures/workflow.png)
+(images/project_workflow.png)
 
 ---
 
