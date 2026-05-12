@@ -630,17 +630,6 @@ def run_feature_selection_methods(X_train, y_train):
     return selection_df
 
 
-def manipulate_df_process(df):
-    df = fix_data_types(df)
-    df = handle_missing_values(df, ref_df=None)
-    df = handle_outliers(df)
-    df = add_features(df)
-    df, te, alternative_cols = encode_categorical_columns(df, te=None, alternative_cols=None)
-
-    return df
-    
-
-
 def compare_xgb_feature_sets(X_train, y_train, X_val, y_val, selection_df):
     """
     Compare XGBoost performance on:
